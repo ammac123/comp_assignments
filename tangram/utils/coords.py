@@ -1,6 +1,14 @@
 
+from collections import defaultdict
 from functools import total_ordering
 from fractions import Fraction
+import numpy as np
+
+def arc_sort(x: tuple[float], y: tuple[float], offset: float = 0.0):
+    dx = y[0] - x[0]
+    dy = y[1] - x[1]
+    theta = np.arctan2(float(dx), float(dy))
+    return (theta + offset)%(2*np.pi)
 
 @total_ordering
 class Number:
@@ -15,16 +23,33 @@ class Number:
         self.rational = float(rational)
         self.irrational = float(irrational)
 
+    def coordinate_format(self) -> str:
+        coordinate = self.__repr__()
+        coordinate = coordinate.replace('(','').replace(')','').replace(' ','')
+        if abs(self.irrational) == 1:
+            coordinate = coordinate.replace('√2','sqrt(2)')
+        else:
+            coordinate = coordinate.replace('√2','*sqrt(2)')
+        return coordinate
+
     def _format_number(self, num: float) -> str:
         """Format a number as integer or fraction."""
         fraction = Fraction(num).limit_denominator()
         if fraction.denominator == 1:
             return str(fraction.numerator)
         return f"{fraction.numerator}/{fraction.denominator}"
-    
+
+    def __eq__(self, other):
+        if isinstance(other, Number):
+            if self.rational == other.rational and self.irrational == other.irrational:
+                return True
+            else:
+                self.__float__() == other.__float__()
+        return self.__float__() == other.__float__()
+
     def __lt__(self, other):
         return self.__float__() < other.__float__()
-
+    
     def __neg__(self):
         """Handle negation (-x)"""
         return Number(-self.rational, -self.irrational)
@@ -66,7 +91,23 @@ class Number:
     
     def __float__(self):
         """Convert to floating point number"""
-        return self.rational + self.irrational * (2 ** 0.5)
+        return float(self.rational) + float(self.irrational * pow(2,0.5))
+    
+    def __mod__(self, other):
+        """Handles the modulus operator"""
+        if isinstance(other, (int, float)):
+            return self.__float__() % other
+        
+    def __hash__(self):
+        return hash(self.__float__())
+    
+    def __abs__(self):
+        return abs(self.__float__())
+    
+    def __pow__(self, other):
+        if isinstance(other, (int, float)):
+            return pow(self.__float__(), other)
+    
     
     def __repr__(self):
         parts = []
@@ -80,8 +121,12 @@ class Number:
             # Format the coefficient
             if abs(self.irrational) == 1:
                 # Just show √2 with appropriate sign
-                parts.append(" " if self.irrational > 0 else " + ")
-                parts.append("√2")
+                if self.rational != 0:
+                    parts.append(" + " if self.irrational > 0 else " - ")
+                    parts.append("√2")
+                else:
+                    parts.append("" if self.irrational > 0 else "-")
+                    parts.append("√2")
             else:
                 # Show coefficient with √2
                 if parts and self.irrational > 0:
@@ -111,4 +156,22 @@ class Number:
         
         return "".join(parts)
     
-    
+
+def canonical_edge(a, b):
+    """Sort edge vertices so direction doesnt matter"""
+    return tuple(sorted([a, b]))
+
+def find_boundary_edges(polygons):
+    edge_count = defaultdict(int)
+
+    for poly in polygons:
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            edge = canonical_edge(a, b)
+            edge_count[edge] += 1
+
+    # Boundary edges appear only once
+    boundary_edges = [edge for edge, count in edge_count.items() if count == 1]
+    return boundary_edges
+

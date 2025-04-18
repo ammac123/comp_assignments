@@ -12,7 +12,7 @@ from utils.coords import Number
 
 test = Path.cwd() / 'tests' / 'cat.tex'
 
-raw = FileHandler.read_file(test)
+
 class LatexTangramParser:
     def __init__(self, raw_text: str):
         self.raw_text = raw_text
@@ -21,14 +21,32 @@ class LatexTangramParser:
 
     def parse(self) -> list[Tangram]:
         for line_number, line in enumerate(self.lines, 1):
-            pass
+            tangram = self._parse_line(line)
+            if tangram is not None:
+                self.tangrams.append(tangram)
+        return self.tangrams
 
-    def _parse_line(self, line: str, line_number: int) -> Tangram | None:
+
+    def _parse_line(self, line: str) -> Tangram | None:
         """Parse a single line to determine if there is a Tangram present"""
-        # Regex to find a tangram (based on TangramTikz package)
-        pattern = re.compile(r'<(?P<params>[^>]*)\>\(\{(?P<x>[^}]+)\},\{(?P<y>[^}]+)\}\)\{(?P<type>Tang(?:GrandTri|MoyTri|PetTri|Car|Para))\}')
-        
-        matches = re.search(pattern=pattern, string=line)
+        # Regex to find a tangram and coords (based on TangramTikz package)
+        pattern = re.compile(
+                r'\[TangSol.*'
+                r'(?P<params>(?<=\]<).*(?=>)|(?:(?=\]\()))'
+                    r'.*'
+                r'(?P<coords>'
+                    r'(?P<x>(?<=({)).*)(?=(},))'
+                        r'.*'
+                    r'(?P<y>(?<=(,{)).*)(?=(}\))))'
+                r'.*(?P<type>Tang(?:GrandTri|MoyTri|PetTri|Car|Para))'
+            )
+        # Pattern to match the params because I cannot for the life of me 
+        # find a fucking pattern that works for both at once
+        pattern_params = re.compile(
+            r'((?P<params>(?<=<)[^>]*(?=>))*)'
+        )
+        line = re.sub(r'\s','',line)
+        matches = pattern.search(line)
 
         if matches is None:
             return None
@@ -63,53 +81,64 @@ class LatexTangramParser:
 
 
 class CoordParser:
-    pattern = r'^(?P<a_value>[+-]?(?:\d*\.?\d+)?)?(?:(?P<operator>[+-])?(?:(?P<b_value>\d*\.?\d+)?\*?)?sqrt\(2\))?$'
+    pattern = re.compile(
+        r'(?P<a_sign>[+-]?)'
+            r'(?P<a>\d+(?:\.\d+)?|\.\d+)?'
+        r'(?P<b_part>'
+            r'(?P<b_sign>[+-]*)'
+            r'(?:(?P<b>\d+(?:\.\d+)?|\.\d+)\*)?'
+            r'sqrt\(2\)'
+        r')?$')
 
     @staticmethod
     def parse(expression: str) -> tuple[float, float]:
+        a_re = (
+            r'(?P<a_part>^('    # Groups all 'a' matches into group
+                r'(?P<a_sign>[+-]?)'    # Determines sign of 'a'
+                r'(?P<a>(\d+|\d+\.\d+|\.\d+))'  # 'a' value
+            r')(?=[+-]|$))' # Anchoring 'a' to either "+","-" or end of string
+            r'?'    # Flag to match 0 or 1 times
+        )
+        b_re = (
+            r'(?P<b_part>'  # Groups all 'b' matches into group
+                r'(?P<b_sign>[+-]?)'    # Determines sign of 'b'
+                r'(?P<b>(\d+|\d+\.\d+|\.\d+)?)' # 'b' value
+            r'\*?sqrt\(2\)$)'   # Anchors 'b' to either "sqrt(2)" or "*sqrt(2)"
+            r'?'    # Flag to match 0 or 1 times
+        )
+        pattern = re.compile(a_re + b_re)
 
-        pattern = re.compile(CoordParser.pattern, re.VERBOSE)
-        match = pattern.match(expression.strip())
+        # Clean expression of whitespaces
+        expression = re.sub(r'\s','',expression)
+
+        match = pattern.match(expression)
 
         if not match:
-            raise ValueError(f'Invalid coordinates {expression}')
+            return None
         
-        a_value = match.group('a_value') or '0'
-        b_value = match.group('b_value') or '1'
-        operator = match.group('operator') or '0'
+        # Parsing a
+        rational = 0.0
+        if match.group('a_part'):
+            a_value = match.group('a')
+            a_sign = match.group('a_sign')
+            a_value = float(a_value)
+            if a_sign == '-':
+                a_value = -a_value
+            rational = a_value
 
-        rational = float(a_value) if a_value else 0.0
+        # Parsing b
+        irrational = 0.0
+        if match.group('b_part'):
+            b_value = match.group('b')
+            b_sign = match.group('b_sign')
+            if b_value:
+                b_value = float(b_value)
+            else:
+                b_value = 1.0
+            if b_sign == '-':
+                b_value = -b_value
 
-        if 'sqrt(2)' not in expression:
-            return (rational, 0.0)
-        
-        irrational = float(b_value)
-        if operator == '-':
-            irrational = -irrational
+            irrational = b_value
+            
 
         return (rational, irrational)
-    
-
-
-test = '\\PieceTangram[TangSol]<xscale=-1,rotate=3735>({-000.500},{-0.5-sqrt(2)}){TangPetTri}'
-
-pat = re.compile(r"(?:\<(?P<params>[^\]]*)\>)?(?P<full>\(\{(?P<x>[^}]+)\},\s*\{(?P<y>[^}]+)\}\))(?P<type>Tang(?:GrandTri|MoyTri|PetTri|Car|Para))")
-
-pat1 = r'<(?P<params>[^>]*)\>\(\{(?P<x>[^}]+)\},\{(?P<y>[^}]+)\}\)\{(?P<type>Tang(?:GrandTri|MoyTri|PetTri|Car|Para))\}'
-
-matches = re.search(pattern=pat1, string=test)
-
-matches.group('x')
-matches.group('y')
-matches.group('type')
-
-dict(param.split('=') for param in matches.group('params').split(","))
-
-
-
-l = LatexTangramParser(test)
-
-m = l._parse_line(line=test, line_number=0)
-
-
-m.vertices

@@ -1,2 +1,10 @@
 _home/
 .DS_Store
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.gz
+*.pyc
+*.drawio
+*.ipynb
